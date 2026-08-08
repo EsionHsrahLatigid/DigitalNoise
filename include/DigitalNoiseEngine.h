@@ -78,7 +78,10 @@ private:
     void tickGraph() noexcept;
     StereoFrame decodeBlobFrame() noexcept;
     float decodeBlobSample (std::uint32_t byteAddress, int mode, int bitIndex, int channel) noexcept;
+    StereoFrame applyStructuralRupture (std::uint32_t byteAddress, StereoFrame rawFrame) noexcept;
+    std::uint32_t structuralCellStart (std::uint32_t byteAddress) const noexcept;
     std::uint8_t readBlobByte (std::uint32_t byteAddress) const noexcept;
+    std::uint32_t readBlobBigEndian32 (std::uint32_t byteAddress) const noexcept;
     void writeBlobByte (std::uint32_t byteAddress, std::uint8_t value) noexcept;
     void writeBlobBigEndian32 (std::uint32_t byteAddress, std::uint32_t value) noexcept;
     std::uint32_t cellularStep (std::uint32_t cells, std::uint8_t rule) noexcept;
@@ -102,6 +105,12 @@ private:
     std::uint32_t blobCursor = 0u;
     std::int32_t deltaLeft = 0;
     std::int32_t deltaRight = 0;
+    std::uint32_t lastStructuralCell = 0xffffffffu;
+    std::uint32_t ruptureSeed = 1u;
+    int ruptureAge = 0;
+    int ruptureLength = 0;
+    float previousRawLeft = 0.0f;
+    float previousRawRight = 0.0f;
     int sequencerIndex = 0;
 
     std::array<std::uint32_t, memorySize> memory {};

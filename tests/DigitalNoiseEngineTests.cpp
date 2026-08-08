@@ -31,6 +31,61 @@ std::vector<float> renderLeft (std::uint32_t seed, Parameters params, int sample
     return output;
 }
 
+struct MotionMetrics
+{
+    double meanAbsoluteDelta = 0.0;
+    double blockRmsRange = 0.0;
+    double nearLimitRate = 0.0;
+    double exactClampRate = 0.0;
+};
+
+MotionMetrics measureMotion (std::uint32_t seed, Parameters params, int samples)
+{
+    constexpr int blockSize = 256;
+    DigitalNoiseEngine engine;
+    engine.prepare (48000.0);
+    engine.setParameters (params);
+    engine.reset (seed);
+    for (int i = 0; i < 4096; ++i)
+        (void) engine.processSample();
+
+    double previous = 0.0;
+    double absoluteDelta = 0.0;
+    double minimumBlockRms = 1.0;
+    double maximumBlockRms = 0.0;
+    int nearLimit = 0;
+    int exactClamp = 0;
+
+    for (int offset = 0; offset < samples; offset += blockSize)
+    {
+        const auto blockSamples = std::min (blockSize, samples - offset);
+        double blockSquares = 0.0;
+        for (int i = 0; i < blockSamples; ++i)
+        {
+            const auto frame = engine.processSample();
+            const auto mono = 0.5 * static_cast<double> (frame.left + frame.right);
+            absoluteDelta += std::fabs (mono - previous);
+            previous = mono;
+            blockSquares += mono * mono;
+            nearLimit += std::fabs (frame.left) > 0.90f ? 1 : 0;
+            nearLimit += std::fabs (frame.right) > 0.90f ? 1 : 0;
+            exactClamp += std::fabs (frame.left) >= 0.94999f ? 1 : 0;
+            exactClamp += std::fabs (frame.right) >= 0.94999f ? 1 : 0;
+        }
+
+        const auto blockRms = std::sqrt (blockSquares / static_cast<double> (blockSamples));
+        minimumBlockRms = std::min (minimumBlockRms, blockRms);
+        maximumBlockRms = std::max (maximumBlockRms, blockRms);
+    }
+
+    return {
+        absoluteDelta / static_cast<double> (samples),
+        maximumBlockRms - minimumBlockRms,
+        static_cast<double> (nearLimit) / static_cast<double> (samples * 2),
+        static_cast<double> (exactClamp) / static_cast<double> (samples * 2)
+    };
+}
+
 void testDeterministicSameSeed()
 {
     Parameters params;
@@ -245,6 +300,7 @@ void testRawSignedEightBitDecoderLoopsOverBlob()
     params.clockHz = 1.0f;
     params.rawMisread = 1.0f;
     params.formatSmash = 0.0f;
+    params.intensity = 0.0f;
     params.outputGain = 0.5f;
 
     const auto output = renderLeft (0x444e5a31u, params, 8192);
@@ -258,6 +314,7 @@ void testRawDecoderFormatsProduceDifferentStructures()
     signedEight.clockHz = 1.0f;
     signedEight.rawMisread = 1.0f;
     signedEight.formatSmash = 0.0f;
+    signedEight.intensity = 0.0f;
 
     Parameters bigEndianTwentyFour = signedEight;
     bigEndianTwentyFour.formatSmash = 0.70f;
@@ -277,6 +334,7 @@ void testRawDecoderExposesStructuredBinarySuperblock()
     params.clockHz = 1.0f;
     params.rawMisread = 1.0f;
     params.formatSmash = 0.0f;
+    params.intensity = 0.0f;
     params.stereoDivergence = 0.0f;
     params.outputGain = 1.0f;
 
@@ -299,6 +357,7 @@ void testRawDecoderExposesMixedContainerStructures()
     params.clockHz = 1.0f;
     params.rawMisread = 1.0f;
     params.formatSmash = 0.0f;
+    params.intensity = 0.0f;
     params.stereoDivergence = 0.0f;
     params.outputGain = 1.0f;
 
@@ -342,6 +401,59 @@ void testLegacyStateParameterMigration()
     assert (migrated[11] == 4242.0f);
 }
 
+void testStructuralRuptureCreatesMeasuredDynamics()
+{
+    Parameters rawOnly;
+    rawOnly.clockHz = 360.0f;
+    rawOnly.topology = 0.18f;
+    rawOnly.mutation = 0.97f;
+    rawOnly.memoryDepth = 0.95f;
+    rawOnly.addressScramble = 0.91f;
+    rawOnly.feedback = 0.80f;
+    rawOnly.stereoDivergence = 0.96f;
+    rawOnly.intensity = 0.0f;
+    rawOnly.rawMisread = 1.0f;
+    rawOnly.formatSmash = 0.97f;
+    rawOnly.outputGain = 0.60f;
+
+    auto ruptured = rawOnly;
+    ruptured.intensity = 1.0f;
+
+    constexpr int measuredSamples = 96000;
+    const auto baseline = measureMotion (8191u, rawOnly, measuredSamples);
+    const auto violent = measureMotion (8191u, ruptured, measuredSamples);
+
+    assert (violent.meanAbsoluteDelta > baseline.meanAbsoluteDelta * 1.15);
+    assert (violent.blockRmsRange > baseline.blockRmsRange * 1.8);
+    assert (violent.nearLimitRate < 0.08);
+    assert (violent.exactClampRate < 0.04);
+}
+
+void testViolentProfilesDoNotDependOnSafetyClamp()
+{
+    const auto gain = [] (float decibels) noexcept
+    {
+        return std::pow (10.0f, decibels / 20.0f);
+    };
+
+    const std::array<Parameters, 4> profiles {{
+        { 8600.0f, 0.52f, 0.28f, 0.72f, 0.68f, 0.38f, 0.58f, 0.88f, 0.78f, 0.29f, gain (-6.0f) },
+        { 13200.0f, 0.76f, 0.62f, 0.93f, 0.91f, 0.73f, 0.84f, 1.0f, 0.98f, 0.48f, gain (-5.5f) },
+        { 4200.0f, 0.94f, 0.91f, 0.48f, 0.79f, 0.88f, 0.31f, 0.96f, 0.90f, 0.82f, gain (-5.5f) },
+        { 360.0f, 0.18f, 0.97f, 0.95f, 0.91f, 0.80f, 0.96f, 1.0f, 1.0f, 0.97f, gain (-4.5f) }
+    }};
+    constexpr std::array<std::uint32_t, 4> seeds {{ 17041u, 31337u, 48113u, 8191u }};
+
+    for (std::size_t i = 0; i < profiles.size(); ++i)
+    {
+        const auto metrics = measureMotion (seeds[i], profiles[i], 96000);
+        assert (metrics.meanAbsoluteDelta > 0.18);
+        assert (metrics.blockRmsRange > 0.09);
+        assert (metrics.nearLimitRate < 0.08);
+        assert (metrics.exactClampRate < 0.04);
+    }
+}
+
 } // namespace
 
 int main()
@@ -360,6 +472,8 @@ int main()
     testRawDecoderExposesStructuredBinarySuperblock();
     testRawDecoderExposesMixedContainerStructures();
     testLegacyStateParameterMigration();
+    testStructuralRuptureCreatesMeasuredDynamics();
+    testViolentProfilesDoNotDependOnSafetyClamp();
     std::cout << "DigitalNoiseEngineTests passed\n";
     return 0;
 }

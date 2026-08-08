@@ -42,10 +42,10 @@ yup::String decoderString (float value)
 }
 
 constexpr std::array<std::array<float, 12>, 4> presetValues {{
-    {{ 8600.0f, 0.52f, 0.28f, 0.72f, 0.68f, 0.38f, 0.58f, 0.86f, 0.72f, 0.29f, -12.0f, 17041.0f }},
-    {{ 13200.0f, 0.76f, 0.62f, 0.93f, 0.91f, 0.73f, 0.84f, 1.0f, 0.95f, 0.48f, -15.0f, 31337.0f }},
-    {{ 4200.0f, 0.94f, 0.91f, 0.48f, 0.79f, 0.88f, 0.31f, 0.92f, 0.84f, 0.82f, -14.0f, 48113.0f }},
-    {{ 360.0f, 0.18f, 0.97f, 0.95f, 0.91f, 0.80f, 0.96f, 1.0f, 1.0f, 0.97f, -12.0f, 8191.0f }}
+    {{ 8600.0f, 0.52f, 0.28f, 0.72f, 0.68f, 0.38f, 0.58f, 0.88f, 0.78f, 0.29f, -6.0f, 17041.0f }},
+    {{ 13200.0f, 0.76f, 0.62f, 0.93f, 0.91f, 0.73f, 0.84f, 1.0f, 0.98f, 0.48f, -5.5f, 31337.0f }},
+    {{ 4200.0f, 0.94f, 0.91f, 0.48f, 0.79f, 0.88f, 0.31f, 0.96f, 0.90f, 0.82f, -5.5f, 48113.0f }},
+    {{ 360.0f, 0.18f, 0.97f, 0.95f, 0.91f, 0.80f, 0.96f, 1.0f, 1.0f, 0.97f, -4.5f, 8191.0f }}
 }};
 } // namespace
 
@@ -126,7 +126,7 @@ DigitalNoisePlugin::DigitalNoisePlugin()
                                 .withName ("Bitplane Intensity")
                                 .withHostID (hostParameterIDs[intensity])
                                 .withRange (0.0f, 1.0f)
-                                .withDefault (0.86f)
+                                .withDefault (0.88f)
                                 .withSmoothing (15.0f)
                                 .withModulatable (true)
                                 .build();
@@ -135,7 +135,7 @@ DigitalNoisePlugin::DigitalNoisePlugin()
                                  .withName ("Raw Misread")
                                  .withHostID (hostParameterIDs[rawMisread])
                                  .withRange (0.0f, 1.0f)
-                                 .withDefault (0.72f)
+                                 .withDefault (0.78f)
                                  .withSmoothing (8.0f)
                                  .withModulatable (true)
                                  .withValueToString ([] (float value) { return percentString (value); })
@@ -155,7 +155,7 @@ DigitalNoisePlugin::DigitalNoisePlugin()
                              .withName ("Output")
                              .withHostID (hostParameterIDs[output])
                              .withRange (-48.0f, 6.0f)
-                             .withDefault (-12.0f)
+                             .withDefault (-6.0f)
                              .withSmoothing (30.0f)
                              .withModulatable (true)
                              .withUnit (yup::AudioParameter::ParameterUnit::Decibels)

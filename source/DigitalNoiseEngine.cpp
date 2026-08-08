@@ -38,6 +38,12 @@ void DigitalNoiseEngine::reseedGraph (std::uint32_t seed) noexcept
     blobCursor = 0u;
     deltaLeft = 0;
     deltaRight = 0;
+    lastStructuralCell = 0xffffffffu;
+    ruptureSeed = 1u;
+    ruptureAge = 0;
+    ruptureLength = 0;
+    previousRawLeft = 0.0f;
+    previousRawRight = 0.0f;
     sequencerIndex = 0;
     phase = 0.0f;
     rebuildSequencer();
@@ -307,14 +313,135 @@ StereoFrame DigitalNoiseEngine::decodeBlobFrame() noexcept
     const auto rightAddress = (leftAddress + channelGap) & blobByteMask;
     const auto bitIndex = static_cast<int> ((blobCursor >> 1u) & 7u);
 
-    const StereoFrame frame {
+    const StereoFrame decoded {
         decodeBlobSample (leftAddress, mode, bitIndex, 0),
         decodeBlobSample (rightAddress, mode, 7 - bitIndex, 1)
     };
 
+    const auto frame = applyStructuralRupture (leftAddress, decoded);
+
     const auto skippedBytes = static_cast<std::uint32_t> (modeFraction * 17.0f);
     blobCursor = (blobCursor + static_cast<std::uint32_t> (sampleWidth * 2) + skippedBytes) & blobByteMask;
     return frame;
+}
+
+StereoFrame DigitalNoiseEngine::applyStructuralRupture (std::uint32_t byteAddress,
+                                                         StereoFrame rawFrame) noexcept
+{
+    const auto cellStart = structuralCellStart (byteAddress);
+    if (cellStart != lastStructuralCell)
+    {
+        lastStructuralCell = cellStart;
+        const auto tag = readBlobBigEndian32 (cellStart);
+        const auto descriptor = readBlobBigEndian32 (cellStart + 8u);
+        ruptureSeed = mixSeed (tag ^ rotateLeft (descriptor, 11)
+                               ^ cellStart ^ graphWord ^ initialSeed);
+        ruptureAge = 0;
+        ruptureLength = 10 + static_cast<int> ((descriptor ^ (tag >> 8u)) & 0x1fu);
+    }
+
+    const auto violence = params.intensity * params.intensity;
+    const auto region = byteAddress < 512u  ? 0
+                      : byteAddress < 1024u ? 1
+                      : byteAddress < 2048u ? 2
+                      : byteAddress < 4096u ? 3
+                      : byteAddress < 5120u ? 4
+                      : byteAddress < 5632u ? 5
+                      : byteAddress < 7936u ? 6
+                                           : 7;
+    constexpr float regionGains[] { 1.25f, 0.88f, 0.03f, 1.35f, 0.68f, 1.45f, 0.50f, 1.55f };
+    const auto regionGain = 1.0f + (regionGains[region] - 1.0f) * violence;
+
+    const auto edgeLeft = rawFrame.left - previousRawLeft;
+    const auto edgeRight = rawFrame.right - previousRawRight;
+    previousRawLeft = rawFrame.left;
+    previousRawRight = rawFrame.right;
+
+    float envelope = 0.0f;
+    float burstLeft = 0.0f;
+    float burstRight = 0.0f;
+    if (ruptureAge < ruptureLength)
+    {
+        const auto attack = std::min (1.0f, static_cast<float> (ruptureAge + 1) * 0.25f);
+        const auto decay = 1.0f - static_cast<float> (ruptureAge) / static_cast<float> (ruptureLength);
+        envelope = attack * decay * decay;
+
+        const auto pointerIndex = (ruptureSeed + static_cast<std::uint32_t> (ruptureAge * 13)) & 127u;
+        const auto pointer = readBlobBigEndian32 (5120u + pointerIndex * 4u) & blobByteMask;
+        const auto stride = 1u + ((ruptureSeed >> 24u) & 15u);
+        const auto pointerLeft = readBlobByte (pointer + static_cast<std::uint32_t> (ruptureAge) * stride);
+        const auto pointerRight = readBlobByte (pointer + static_cast<std::uint32_t> (ruptureAge) * (stride + 2u)
+                                                + ((ruptureSeed >> 12u) & 31u));
+
+        const auto localTime = static_cast<std::uint32_t> (ruptureAge + 1);
+        const auto time = localTime * (1u + ((ruptureSeed >> 27u) & 15u));
+        const auto makeBytebeat = [time, this] (std::uint32_t salt) noexcept
+        {
+            const auto state = ruptureSeed ^ salt;
+            const auto multiplier = 3u + (state & 31u);
+            const auto shiftA = 1u + ((state >> 8u) & 7u);
+            const auto shiftB = 3u + ((state >> 16u) & 7u);
+            return (time * multiplier)
+                 ^ (time >> shiftA)
+                 ^ ((time >> shiftB) | (time * ((state >> 21u) | 1u)));
+        };
+
+        const auto bytebeatLeft = static_cast<std::uint8_t> (makeBytebeat (0x13579bdfu));
+        const auto bytebeatRight = static_cast<std::uint8_t> (makeBytebeat (0x2468ace0u));
+        const auto signedByte = [] (std::uint8_t byte) noexcept
+        {
+            const auto value = byte >= 0x80u ? static_cast<int> (byte) - 0x100
+                                             : static_cast<int> (byte);
+            return static_cast<float> (value) / 128.0f;
+        };
+        const auto oneBitLeft = ((bytebeatLeft >> ((ruptureSeed >> 5u) & 7u)) & 1u) != 0u ? 1.0f : -1.0f;
+        const auto oneBitRight = ((bytebeatRight >> ((ruptureSeed >> 13u) & 7u)) & 1u) != 0u ? 1.0f : -1.0f;
+
+        burstLeft = signedByte (bytebeatLeft) * 0.46f
+                  + signedByte (pointerLeft) * 0.34f
+                  + oneBitLeft * 0.20f;
+        burstRight = signedByte (bytebeatRight) * 0.46f
+                   + signedByte (pointerRight) * 0.34f
+                   + oneBitRight * 0.20f;
+        ++ruptureAge;
+    }
+
+    const auto edgeGain = envelope * 0.80f;
+    const auto structuralHeadroom = 1.0f - violence * 0.22f;
+    return {
+        structuralHeadroom
+            * (rawFrame.left * regionGain
+               + violence * (burstLeft * envelope * 1.35f + edgeLeft * edgeGain)),
+        structuralHeadroom
+            * (rawFrame.right * regionGain
+               + violence * (burstRight * envelope * 1.35f + edgeRight * edgeGain))
+    };
+}
+
+std::uint32_t DigitalNoiseEngine::structuralCellStart (std::uint32_t byteAddress) const noexcept
+{
+    const auto wrappedAddress = byteAddress & blobByteMask;
+    if (wrappedAddress < 64u)
+        return 0u;
+    if (wrappedAddress < 192u)
+        return 64u + ((wrappedAddress - 64u) / 16u) * 16u;
+    if (wrappedAddress < 512u)
+        return 192u + ((wrappedAddress - 192u) / 64u) * 64u;
+    if (wrappedAddress < 640u)
+        return 512u + ((wrappedAddress - 512u) / 32u) * 32u;
+    if (wrappedAddress < 1024u)
+        return 640u + ((wrappedAddress - 640u) / 64u) * 64u;
+    if (wrappedAddress < 2048u)
+        return 1024u + ((wrappedAddress - 1024u) / 256u) * 256u;
+    if (wrappedAddress < 4096u)
+        return 2048u + ((wrappedAddress - 2048u) / 96u) * 96u;
+    if (wrappedAddress < 5120u)
+        return 4096u + ((wrappedAddress - 4096u) / 64u) * 64u;
+    if (wrappedAddress < 5632u)
+        return 5120u + ((wrappedAddress - 5120u) / 64u) * 64u;
+    if (wrappedAddress < 7936u)
+        return 5632u + ((wrappedAddress - 5632u) / 256u) * 256u;
+    return 7936u + ((wrappedAddress - 7936u) / 32u) * 32u;
 }
 
 float DigitalNoiseEngine::decodeBlobSample (std::uint32_t byteAddress, int mode, int bitIndex, int channel) noexcept
@@ -369,6 +496,14 @@ std::uint8_t DigitalNoiseEngine::readBlobByte (std::uint32_t byteAddress) const 
     const auto word = memory[static_cast<std::size_t> (wrapped >> 2u)];
     const auto shift = (wrapped & 3u) * 8u;
     return static_cast<std::uint8_t> ((word >> shift) & 0xffu);
+}
+
+std::uint32_t DigitalNoiseEngine::readBlobBigEndian32 (std::uint32_t byteAddress) const noexcept
+{
+    return (static_cast<std::uint32_t> (readBlobByte (byteAddress)) << 24u)
+         | (static_cast<std::uint32_t> (readBlobByte (byteAddress + 1u)) << 16u)
+         | (static_cast<std::uint32_t> (readBlobByte (byteAddress + 2u)) << 8u)
+         | static_cast<std::uint32_t> (readBlobByte (byteAddress + 3u));
 }
 
 void DigitalNoiseEngine::writeBlobByte (std::uint32_t byteAddress, std::uint8_t value) noexcept

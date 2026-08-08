@@ -16,8 +16,10 @@ The signal is produced by a deterministic graph of audible computations:
 4. A 2048-word ring memory is read through addresses derived from the current CA, LFSR, and graph state.
 5. A contradictory virtual binary image is overlaid onto that memory: superblock, directory entries, one MP4-style box fragment, sparse alignment space, fixed-stride packets, a node tree, pointer table, entropy payload, and repeated footer markers.
 6. The raw decoder deliberately misreads those changing structures as signed or unsigned 8-bit PCM, 16/24-bit PCM in either byte order, a one-bit serial stream, or wrapping delta data.
-7. Unsigned wrap arithmetic, XOR, masks, and bit-plane folding turn those states directly into stereo samples.
-8. A final hard safety bound keeps output finite and below `±0.95`; it is not the primary sound source.
+7. Each structural cell becomes an event boundary. Header and descriptor words determine a short attack/decay rupture, a bytebeat-style arithmetic voice, and a pointer-chased read head into the payload.
+8. Region-dependent gain makes sparse pages collapse while packet, pointer, and footer regions arrive as sharply different densities instead of one stationary noise floor.
+9. Unsigned wrap arithmetic, XOR, masks, bit-plane folding, and byte discontinuities turn those states directly into stereo samples.
+10. A final hard safety bound keeps output finite and below `±0.95`; it is not the primary sound source.
 
 No allocation, locking, file access, or random-device call occurs in the audio processing path. A graph seed reproduces exactly the same sequence. Seed automation is disabled: full graph resets are consumed once at a block boundary, while MIDI notes use a lightweight core-only reseed at their exact sample position.
 
@@ -32,7 +34,7 @@ No allocation, locking, file access, or random-device call occurs in the audio p
 | Address Scramble | Rotates and cross-couples read addresses |
 | Memory Feedback | Returns addressed words to the graph |
 | Stereo Divergence | Separates the two coupled state branches |
-| Bitplane Intensity | Raises the contribution of raw folded words |
+| Bitplane Intensity | Raises graph density and the data-driven rupture layer; zero leaves the raw decoder exact |
 | Raw Misread | Crossfades from the graph output into the virtual binary-file decoder |
 | Format Smash | Crosses incompatible PCM, byte-order, bitstream, offset, and stride interpretations |
 | Output | Final gain, -48 to +6 dB before the safety bound |
@@ -99,6 +101,7 @@ The engine tests check the `DigitalNoise` DSP and structured raw-decoder invaria
 - sequence changes caused by topology, memory-depth, and address parameters;
 - exact looping of the 8192-byte raw-file image before graph mutation;
 - audible superblock bytes, an embedded MP4-style box fragment, periodic packet headers, and divergent raw decoder formats;
+- a measured increase in sample discontinuity and short-time RMS range when structural rupture is enabled, while limiting near-bound occupancy;
 - non-constant, non-silent structure;
 - meaningful stereo divergence;
 
