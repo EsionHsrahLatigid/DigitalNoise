@@ -4,6 +4,8 @@ DigitalNoise is a self-running stereo noise instrument built with [YUP](https://
 
 The current prototype builds as a standalone macOS app, VST3, and Audio Unit v2. Its compact editor exposes all twelve graph and raw-decoder parameters in both the app and supporting plugin hosts.
 
+This repository intentionally owns the `DigitalNoise` product only. The adjacent YUP checkout is a dependency, and anything under `build/` is generated output rather than project source.
+
 ## Sound engine
 
 The signal is produced by a deterministic graph of audible computations:

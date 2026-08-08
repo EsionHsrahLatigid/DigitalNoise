@@ -5,7 +5,7 @@
 - Status: Active
 - Last refreshed: 2026-08-08
 - Primary product surfaces: macOS Standalone, VST3 editor, AUv2 editor
-- Evidence reviewed: `README.md`, `docs/02 Plugin Suite Survey and Implementation Plan.md`, `source/DigitalNoiseEditor.*`, current Standalone screenshot and user feedback
+- Evidence reviewed: `README.md`, `source/DigitalNoiseEngine.*`, `source/DigitalNoiseEditor.*`, `tests/DigitalNoiseEngineTests.cpp`, current Standalone screenshot and user feedback
 
 ## Brand
 
