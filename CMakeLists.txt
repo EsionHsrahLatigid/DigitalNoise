@@ -80,7 +80,7 @@ if(DIGITALNOISE_BUILD_PLUGIN)
         PLUGIN_EMAIL ""
         PLUGIN_VERSION "${PROJECT_VERSION}"
         PLUGIN_DESCRIPTION "Algorithmic digital noise instrument"
-        PLUGIN_URL "https://github.com/2bbb/DigitalNoise"
+        PLUGIN_URL "https://github.com/EsionHsrahLatigid/DigitalNoise"
         PLUGIN_IS_SYNTH ON
         PLUGIN_IS_MONO OFF
         PLUGIN_CREATE_CLAP OFF
