@@ -68,23 +68,34 @@ Release app and plugins:
 ```sh
 cmake --preset plugin-release
 cmake --build --preset plugin-release --parallel
-ctest --preset plugin-release
+ctest --preset plugin-release --output-on-failure
+```
+
+Guaranteed local macOS installation:
+
+```sh
+cmake --preset plugin-install
+cmake --build --preset plugin-install --parallel
+ctest --preset plugin-install --output-on-failure
 ```
 
 The first plugin configure may download YUP's upstream sources, SDL3, Steinberg's VST3 SDK, and Apple's AudioUnitSDK.
 
 Artifacts:
 
-- `build/plugin-release/digitalnoise_standalone_plugin.app`
-- `build/plugin-release/VST3/Release/digitalnoise_vst3_plugin.vst3`
-- `build/plugin-release/digitalnoise_au_plugin.component`
+- `artifacts/plugin-release/macos-arm64/standalone/digitalnoise_standalone_plugin.app`
+- `artifacts/plugin-release/macos-arm64/vst3/digitalnoise_vst3_plugin.vst3`
+- `artifacts/plugin-release/macos-arm64/au/digitalnoise_au_plugin.component`
 
-Local installation is intentionally separate from the build:
+`plugin-install` copies physical plugin bundles to the current user's standard plugin folders:
 
-```sh
-cp -R build/plugin-release/VST3/Release/digitalnoise_vst3_plugin.vst3 "$HOME/Library/Audio/Plug-Ins/VST3/"
-cp -R build/plugin-release/digitalnoise_au_plugin.component "$HOME/Library/Audio/Plug-Ins/Components/"
+```text
+~/Library/Audio/Plug-Ins/
+├── VST3/digitalnoise_vst3_plugin.vst3
+└── Components/digitalnoise_au_plugin.component
 ```
+
+The Standalone application remains in `artifacts/`; audio hosts discover only VST3 and Audio Unit bundles under `~/Library/Audio/Plug-Ins`.
 
 The local macOS build ad-hoc signs the standalone app and VST3 bundle. Distribution still requires your Developer ID signing and notarization workflow.
 

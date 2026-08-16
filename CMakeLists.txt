@@ -108,6 +108,15 @@ if(DIGITALNOISE_BUILD_PLUGIN)
         "${CMAKE_CURRENT_LIST_DIR}/include"
         "${CMAKE_CURRENT_LIST_DIR}/source")
 
+    include(cmake/EhlYupArtifactLayout.cmake)
+    ehl_yup_add_artifact_target(
+        TARGET ehl_stage_products
+        PRODUCT DigitalNoise
+        SLUG digitalnoise
+        STANDALONE_TARGET digitalnoise_standalone_plugin
+        VST3_TARGET digitalnoise_vst3_plugin
+        AU_TARGET digitalnoise_au_plugin)
+
     if(APPLE AND DIGITALNOISE_ADHOC_SIGN)
         find_program(DIGITALNOISE_CODESIGN_EXECUTABLE codesign REQUIRED)
         add_custom_command(TARGET digitalnoise_vst3_plugin POST_BUILD
